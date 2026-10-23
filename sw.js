@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cari-harga-cache-v1';
+const CACHE_NAME = 'cari-harga-cache-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -25,17 +25,35 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if(cached) return cached;
-      return fetch(event.request).then((response) => {
-        // simpan salinan baru ke cache untuk dipakai offline nanti
-        if(response && response.status === 200){
+  const req = event.request;
+
+  // Untuk halaman utama (index.html): coba internet dulu supaya selalu dapat versi terbaru.
+  // Kalau tidak ada internet, baru pakai salinan offline yang tersimpan.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return response;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Untuk file lain (ikon, manifest, library): pakai cache dulu biar cepat, tapi
+  // selalu perbarui cache di belakang layar kalau internet tersedia.
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const fetchPromise = fetch(req).then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
         }
         return response;
       }).catch(() => cached);
+      return cached || fetchPromise;
     })
   );
 });
